@@ -1,10 +1,12 @@
 #import tensorflow.keras as tk
 import numpy as np
 from scipy.signal import correlate2d
-#mnist = tk.datasets.mnist
-#(x_train, y_train), (x_test, y_test) = mnist.load_data()
-#np.save("MNIST_train.npy",x_train)
-#np.save("MNIST_train_labels.npy", y_train)
+""" mnist = tk.datasets.mnist
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+np.save("MNIST_test.npy",x_test)
+np.save("MNIST_test_labels.npy", y_test) """
+
+
 
 class ReLu():
     
@@ -18,15 +20,18 @@ class ReLu():
 
 class Layer():
     
-    def __init__(self, input_image):
+    def __init__(self):
         self.mat = np.random.randn(3, 3) * np.sqrt(2 / (3 * 3))
+        self.initialize = self.mat
         self.bias = np.zeros(1)
+        self.RELU = ReLu()
     
     def forward(self, input_image):
         self.X = input_image
         mat_forward = correlate2d(input_image, self.mat, mode = "valid")
         self.Z = mat_forward + self.bias
-        return self.Z
+        A_conv = self.RELU.relu_forward(self.Z)
+        return A_conv
 
     def backwardprop(self, dL_dA, learning_rate = 0.01):
         dA_dZ = (self.Z > 0) * 1
@@ -44,6 +49,7 @@ class Layer():
 class Dense():
     def __init__(self, flattened):
         #use He initialization
+        
         self.W = np.random.randn(10, len(flattened)) * np.sqrt(2 / len(flattened))
         self.b = np.zeros((10, 1))
     
@@ -80,14 +86,18 @@ def cross_entropy(prediction, y):
 
 class CNN():
     def __init__(self, dataset, labels):
-        self.dataset = dataset
+        self.dataset = dataset / 255.0
         self.labels = labels
         self.samples = dataset.shape[0]
         self.Dense_initialized = 0
-    
+        self.layers = []
+
+    def convolution_layer(self, layer):
+        self.layers.append(layer)
+
     def train(self, epochs, batch_size = 100):
-        conv_layer = Layer(self.dataset[0])
-        RELU = ReLu()
+
+        
         for epoch in range(epochs):
             #shuffle dataset
             indices = np.arange(self.samples)
@@ -105,15 +115,17 @@ class CNN():
                 #for each image
                 for j in range(batch_data.shape[0]):
                     # Forward pass
-                    Z_conv = conv_layer.forward(batch_data[j])
-                    A_conv = RELU.relu_forward(Z_conv)
-                    Z_flat = A_conv.flatten().reshape(-1, 1)
+                    A_conv1 = self.layers[0].forward(batch_data[j])
+                    for conv in range(1, len(self.layers)):
+                        A_conv1 = self.layers[conv].forward(A_conv1)
+
+                    Z_flat = A_conv1.flatten().reshape(-1, 1)
 
                     # Initialize Dense layer once
                     if self.Dense_initialized == 0:
                         self.DENSE = Dense(Z_flat)
                         self.Dense_initialized = 1
-
+                    
                     Z_dense = self.DENSE.forward(Z_flat).flatten()
 
                     # Softmax and loss
@@ -125,25 +137,46 @@ class CNN():
 
                     # Backward pass
                     dL_dA_dense = self.DENSE.backward(prediction, one_hot_label, 0.01)
-                    dL_dA_conv = dL_dA_dense.reshape(A_conv.shape)
-                    conv_layer.backwardprop(dL_dA_conv)
+                    dL_dA_conv = dL_dA_dense.reshape(A_conv1.shape)
+                    dL_dX = self.layers[len(self.layers) - 1].backwardprop(dL_dA_conv)
+                    for i in range(len(self.layers) - 2, 0, -1):
+                        dL_dX = self.layers[i].backwardprop(dL_dX)
                 minibatch_loss = batch_loss/batch_size
                 print(minibatch_loss)
-        pass
-
+        return None
+    
+    def predict(self, test, test_label):
+        
+        for layer in self.layers:
+            test = layer.forward(test)
+        flatten = test.flatten().reshape(-1, 1)
+        dense_layer = self.DENSE.forward(flatten).flatten()
+        prediction = Softmax(dense_layer)
+        print(prediction)
+        print(test_label)
 
         
 
 
-
+np.random.seed(5)
 
 example = np.load("MNIST_train.npy")
 example_labels = np.load("MNIST_train_labels.npy")
 
+test = np.load("MNIST_test.npy")
+test_labels = np.load("MNIST_train_labels.npy")
+
+example = example[0:10000]
+example_labels = example_labels[0:10000]
 
 
 conv_network = CNN(example, example_labels)
-conv_network.train(1, 5)
+conv_network.convolution_layer(Layer())
+conv_network.convolution_layer(Layer())
+conv_network.convolution_layer(Layer())
+conv_network.train(5, 100)
+
+conv_network.predict(example[976], example_labels[976])
 
 
 
